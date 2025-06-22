@@ -1,7 +1,14 @@
 /******************************************************************************
- * Loads the BerlinMOD data with WGS84 coordinates in CSV format 
- * http://dna.fernuni-hagen.de/secondo/BerlinMOD/BerlinMOD.html  
- * into MobilityDB using projected (2D) coordinates with SRID 3857
+ * BerlinMOD is a synthetic data generator and benchmark for spatio-temporal
+ * database management sytems
+ * https://secondo-database.github.io/BerlinMOD/BerlinMOD.html
+ * A MobilityDB implementation of BerlinMOD can be found in
+ * https://github.com/MobilityDB/MobilityDB-BerlinMOD
+ * The above repository also contains pregenerated datasets using OSM data from
+ * Brussels at various scale factors.
+ *
+ * This SQL script loads pregenerated BerlinMOD data in CSV format into
+ * MobilityDB using projected (2D) coordinates with SRID 3857
  * https://epsg.io/3857
  * Parameters:
  *    fullpath: states the full path in which the CSV files are located.
@@ -86,9 +93,9 @@ BEGIN
     'DELIMITER '','' CSV HEADER', fullpath);
 
   IF gist THEN
-    CREATE INDEX Points_Geom_gist_idx ON Points USING GIST(Geom);
+    CREATE INDEX Points_geom_gist_idx ON Points USING gist(Geom);
   ELSE
-    CREATE INDEX Points_Geom_spgist_idx ON Points USING SPGIST(Geom);
+    CREATE INDEX Points_geom_spgist_idx ON Points USING spgist(Geom);
   END IF;
   
   /* There are NO duplicate points in Points
@@ -116,9 +123,9 @@ BEGIN
     'FROM ''%sregions.csv'' DELIMITER '','' CSV HEADER', fullpath);
   
   IF gist THEN
-    CREATE INDEX Regions_Geom_gist_idx ON Regions USING GIST(Geom);
+    CREATE INDEX Regions_geom_gist_idx ON Regions USING gist (Geom);
   ELSE
-    CREATE INDEX Regions_Geom_spgist_idx ON Regions USING SPGIST(Geom);
+    CREATE INDEX Regions_geom_spgist_idx ON Regions USING spgist (Geom);
   END IF;
 
   CREATE VIEW Regions1 (RegionId, Geom) AS
@@ -126,32 +133,6 @@ BEGIN
   FROM Regions
   LIMIT 10;
 
---------------------------------------------------------------
-
-  CREATE TABLE Municipalities
-  (
-    MunicipalityId int PRIMARY KEY, 
-    MunicipalityName text UNIQUE,
-    Population int,
-    PercPop float,
-    PopDensityKm2 int, 
-    NoEnterp int,
-    PercEnterp float,
-    MunicipalityGeo geometry
-  );
-
-  EXECUTE format('COPY Municipalities(MunicipalityId, MunicipalityName, '
-    'Population, PercPop, PopDensityKm2, NoEnterp, PercEnterp, MunicipalityGeo)'
-    'FROM ''%smunicipalities.csv'' DELIMITER '','' CSV HEADER', fullpath);
-  
-  IF gist THEN
-    CREATE INDEX Municipalities_MunicipalityGeo_gist_idx ON Municipalities
-      USING GIST(MunicipalityGeo);
-  ELSE
-    CREATE INDEX Municipalities_MunicipalityGeo_spgist_idx ON Municipalities
-      USING SPGIST(MunicipalityGeo);
-  END IF;
-   
 --------------------------------------------------------------
 
   RAISE NOTICE 'Creating table RoadSegments';
@@ -181,10 +162,10 @@ BEGIN
     'DELIMITER '','' CSV HEADER', fullpath);
   IF gist THEN
     CREATE INDEX RoadSegments_SegmentGeo_gist_idx ON RoadSegments
-      USING GIST(SegmentGeo);
+      USING gist(SegmentGeo);
   ELSE
     CREATE INDEX RoadSegments_SegmentGeo_spgist_idx ON RoadSegments
-      USING SPGIST(SegmentGeo);
+      USING spgist(SegmentGeo);
   END IF;
 
 --------------------------------------------------------------
@@ -215,7 +196,7 @@ BEGIN
   EXECUTE format('COPY Licences(LicenceId, Licence, VehicleId) '
     'FROM ''%slicences.csv'' DELIMITER '','' CSV HEADER', fullpath);
 
-  CREATE INDEX Licences_VehicleId_idx ON Licences USING BTREE(VehicleId);
+  CREATE INDEX Licences_VehId_idx ON Licences USING btree (VehicleId);
 
   /* There are duplicate licences in Licences, e.g., in SF 0.005
   SELECT COUNT(*)
@@ -260,7 +241,6 @@ BEGIN
     SeqNo int,
     Trip tgeompoint NOT NULL,
     Trajectory geometry,
-    UNIQUE (VehicleId, StartDate, SeqNo),
     FOREIGN KEY (VehicleId) REFERENCES Vehicles(VehicleId) 
   );
   
@@ -272,14 +252,12 @@ BEGIN
   UPDATE Trips
   SET Trajectory = trajectory(Trip);
 
-  CREATE INDEX Trips_VehicleId_idx ON Trips USING BTREE(VehicleId);
+  CREATE INDEX Trips_VehId_idx ON Trips USING btree(VehicleId);
 
   IF gist THEN
-    CREATE INDEX Trips_Trip_gist_idx ON Trips USING GIST(Trip);
-    CREATE INDEX Trips_Trajectory_gist_idx ON Trips USING GIST(Trajectory);
+    CREATE INDEX Trips_gist_idx ON Trips USING gist(trip);
   ELSE
-    CREATE INDEX Trips_Trip_spgist_idx ON Trips USING SPGIST(Trip);
-    CREATE INDEX Trips_Trajectory_spgist_idx ON Trips USING SPGIST(Trajectory);
+    CREATE INDEX Trips_spgist_idx ON Trips USING spgist(trip);
   END IF;
   
   DROP VIEW IF EXISTS Trips1;

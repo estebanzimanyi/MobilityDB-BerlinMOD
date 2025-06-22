@@ -65,9 +65,9 @@ BerlinMOD synthetic data using OSM data from Brussels.
 | SF 0.5 | 1,414 | 22 |  81,584 | [brussels_sf0.5.zip](https://docs.mobilitydb.com/pub/brussels_sf0.5.zip) | 2.2 GB |
 | SF 1   | 2,000 | 30 | 157,565 | [brussels_sf1.zip](https://docs.mobilitydb.com/pub/brussels_sf1.zip) | 4.2 GB |
 
+The SQL script for loading the above data can be found [here](https://github.com/MobilityDB/MobilityDB-BerlinMOD/blob/master/BerlinMOD/berlinmod_load.sql)
 
 Deliveries synthetic data using OSM data from Brussels.
-
 
 | Scale Factor | Warehouses | Vehicles | Customers | Days | Deliveries | File | Size |
 |--------------|-----------:|---------:|----------:|------|-----------:|-----|-----:|
@@ -75,7 +75,10 @@ Deliveries synthetic data using OSM data from Brussels.
 | SF 0.2       |  45 |   894 |  4,472 | 15 | 11,622 | [deliveries_sf0.2.zip](https://docs.mobilitydb.com/pub/deliveries_sf0.2.zip) | 2.6 GB |
 | SF 0.5       |  71 | 1,414 |  7,071 | 22 | 26,866 | [deliveries_sf0.5.zip](https://docs.mobilitydb.com/pub/deliveries_sf0.5.zip) | 6.1 GB |
 | SF 1         | 100 | 2,000 | 10,000 | 30 | 26,866 | [deliveries_sf1.zip](https://docs.mobilitydb.com/pub/deliveries_sf1.zip) | 11.8 GB |
-  
+
+The SQL script for loading the above data can be found [here](https://github.com/MobilityDB/MobilityDB-BerlinMOD/blob/master/BerlinMOD/deliveries_load.sql)
+
+
 
 License
 -------
