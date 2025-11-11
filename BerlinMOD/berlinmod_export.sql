@@ -67,7 +67,8 @@ BEGIN
   TO ''%slicences.csv'' DELIMITER '','' CSV HEADER', fullpath);
 
   RAISE INFO 'Exporting table Municipalities';
-  EXECUTE format('COPY (SELECT MunicipalityId, MunicipalityName, Population,
+  EXECUTE format('COPY (SELECT MunicipalityId, MunicipalityName,
+    MunicipalityNameFR, MunicipalityNameNL, Population,
     PercPop, PopDensityKm2, NoEnterp, PercEnterp, 
     ST_AsEWKT(MunicipalityGeo) AS MunicipalityGeo
     FROM Municipalities ORDER BY MunicipalityId)

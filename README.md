@@ -78,8 +78,6 @@ Deliveries synthetic data using OSM data from Brussels.
 
 The SQL script for loading the above data can be found [here](https://github.com/MobilityDB/MobilityDB-BerlinMOD/blob/master/BerlinMOD/deliveries_load.sql)
 
-
-
 License
 -------
 

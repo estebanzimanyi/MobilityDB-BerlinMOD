@@ -10,7 +10,7 @@ CREATE TABLE RoadSegments(SegmentId bigint PRIMARY KEY, Name text,
   OsmId bigint, TagId integer, SegmentLength float, SourceNode bigint, 
   TargetNode bigint, SourceOsm bigint, TargetOsm bigint, TimeSecsFwd float,
   TimeSecsBwd float, OneWay integer, MaxSpeedFwd float, MaxSpeedBwd float, 
-  Priority float, SegmentGeo geometry);
+  Priority float, RoadType text, SegmentGeo geometry);
 INSERT INTO RoadSegments(SegmentId, Name, OsmId, TagId, SegmentLength, 
   SourceNode, TargetNode, SourceOsm, TargetOsm, TimeSecsFwd, TimeSecsBwd, 
   OneWay, MaxSpeedFwd, MaxSpeedBwd, Priority, SegmentGeo)
@@ -18,6 +18,13 @@ SELECT gid, name, osm_id, tag_id, length_m, source, target, source_osm,
   target_osm, cost_s, reverse_cost_s, one_way, maxspeed_forward,
   maxspeed_backward, priority, ST_Transform(the_geom, 3857)
 FROM ways;
+
+UPDATE RoadSegments r
+SET RoadType = (
+  SELECT highway 
+  FROM planet_osm_line o
+  WHERE o.osm_id = r.OsmId
+  LIMIT 1);
 
 -- The nodes table should contain ONLY the vertices that belong to the largest
 -- connected component in the underlying map. Like this, we guarantee that
@@ -72,28 +79,29 @@ SELECT COUNT(*) FROM Nodes;
 
 DROP TABLE IF EXISTS Municipalities;
 CREATE TABLE Municipalities(MunicipalityId int PRIMARY KEY, 
-  MunicipalityName text UNIQUE, Population int, PercPop float,
+  MunicipalityName text UNIQUE, MunicipalityNameFR text,
+  MunicipalityNameNL text, Population int, PercPop float,
   PopDensityKm2 int, NoEnterp int, PercEnterp float);
 INSERT INTO Municipalities VALUES
-(1,'Anderlecht',118241,0.10,6680,6460,0.08),
-(2,'Auderghem - Oudergem',33313,0.03,3701,2266,0.03),
-(3,'Berchem-Sainte-Agathe - Sint-Agatha-Berchem',24701,0.02,8518,1266,0.02),
-(4,'Etterbeek',176545,0.15,5415,14204,0.18),
-(5,'Evere',47414,0.04,15295,3769,0.05),
-(6,'Forest - Vorst',40394,0.03,8079,1880,0.02),
-(7,'Ganshoren',55746,0.05,8991,3436,0.04),
-(8,'Ixelles - Elsene',24596,0.02,9838,1170,0.01),
-(9,'Jette',86244,0.07,13690,9304,0.12),
-(10,'Koekelberg',51933,0.04,10387,2403,0.03),
-(11,'Molenbeek-Saint-Jean - Sint-Jans-Molenbeek',21609,0.02,18008,1064,0.01),
-(12,'Saint-Gilles - Sint-Gillis',96629,0.08,16378,4362,0.05),
-(13,'Saint-Josse-ten-Noode - Sint-Joost-ten-Node',50471,0.04,20188,3769,0.05),
-(14,'Schaerbeek - Schaarbeek',27115,0.02,24650,1411,0.02),
-(15,'Uccle - Ukkel',133042,0.11,16425,7511,0.09),
-(16,'Ville de Bruxelles - Stad Brussel',82307,0.07,3594,7435,0.09),
-(17,'Watermael-Boitsfort - Watermaal-Bosvoorde',24871,0.02,1928,1899,0.02),
-(18,'Woluwe-Saint-Lambert - Sint-Lambrechts-Woluwe',55216,0.05,7669,3590,0.04),
-(19,'Woluwe-Saint-Pierre - Sint-Pieters-Woluwe',41217,0.03,4631,2859,0.04);
+(1,'Anderlecht','Anderlecht','Anderlecht',118241,0.10,6680,6460,0.08),
+(2,'Auderghem - Oudergem','Auderghem','Oudergem',33313,0.03,3701,2266,0.03),
+(3,'Berchem-Sainte-Agathe - Sint-Agatha-Berchem','Berchem-Sainte-Agathe','Sint-Agatha-Berchem',24701,0.02,8518,1266,0.02),
+(4,'Etterbeek','Etterbeek','Etterbeek',176545,0.15,5415,14204,0.18),
+(5,'Evere','Evere','Evere',47414,0.04,15295,3769,0.05),
+(6,'Forest - Vorst','Forest','Vorst',40394,0.03,8079,1880,0.02),
+(7,'Ganshoren','Ganshoren','Ganshoren',55746,0.05,8991,3436,0.04),
+(8,'Ixelles - Elsene','Ixelles','Elsene',24596,0.02,9838,1170,0.01),
+(9,'Jette','Jette','Jette',86244,0.07,13690,9304,0.12),
+(10,'Koekelberg','Koekelberg','Koekelberg',51933,0.04,10387,2403,0.03),
+(11,'Molenbeek-Saint-Jean - Sint-Jans-Molenbeek','Molenbeek-Saint-Jean','Sint-Jans-Molenbeek',21609,0.02,18008,1064,0.01),
+(12,'Saint-Gilles - Sint-Gillis','Saint-Gilles','Saint-Gilles',96629,0.08,16378,4362,0.05),
+(13,'Saint-Josse-ten-Noode - Sint-Joost-ten-Node','Saint-Josse-ten-Noode','Sint-Joost-ten-Node',50471,0.04,20188,3769,0.05),
+(14,'Schaerbeek - Schaarbeek','Schaerbeek - Schaarbeek','Schaerbeek - Schaarbeek',27115,0.02,24650,1411,0.02),
+(15,'Uccle - Ukkel','Uccle','Uccle',133042,0.11,16425,7511,0.09),
+(16,'Ville de Bruxelles - Stad Brussel','Ville de Bruxelles','Stad Brussel',82307,0.07,3594,7435,0.09),
+(17,'Watermael-Boitsfort - Watermaal-Bosvoorde','Watermael-Boitsfort','Watermaal-Bosvoorde',24871,0.02,1928,1899,0.02),
+(18,'Woluwe-Saint-Lambert - Sint-Lambrechts-Woluwe','Woluwe-Saint-Lambert','Sint-Lambrechts-Woluwe',55216,0.05,7669,3590,0.04),
+(19,'Woluwe-Saint-Pierre - Sint-Pieters-Woluwe','Woluwe-Saint-Pierre','Sint-Pieters-Woluwe',41217,0.03,4631,2859,0.04);
 
 -- Compute the geometry of the Municipalities from the boundaries in planet_osm_line
 
