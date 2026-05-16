@@ -39,7 +39,7 @@ of platform or index choice.
 | **Trip × static** | Q4, Q7, Q11, Q12, Q15, Q17 | trip vs a query point or polygon — `eIntersects`, `eDwithin`, `valueAtTimestamp =` |
 | **Trip × trip** | Q6, Q10 | trip vs trip cross-join — `eDwithin(t1.trip, t2.trip)`, `tDwithin(...)` |
 | **Trip × region** | Q13, Q14, Q16 | trip vs `Regions1` cross-join over time periods |
-| **Aggregated cross-join** | Q5 | `minDistance(tgeompoint, tgeompoint)` aggregate over the licence cross-join with an `everEqTh3IndexTh3Index` cell-membership prefilter |
+| **Aggregated cross-join** | Q5 | `minDistance(tgeompoint, tgeompoint)` aggregate over the full licence cross-join, exact, accelerated by the kernel's sound per-trip STBox lower bound. A separate `everEqTh3IndexTh3Index` cell-prefiltered variant is a cross-platform throughput diagnostic, not Q5 |
 
 Throughout the doc, the cells where a shape benefits most from a
 particular index family are called out explicitly.
@@ -72,19 +72,28 @@ Q1:72  Q2:1  Q3:6  Q4:80  Q6:0  Q7:26  Q8:75  Q9:94
 Q10:21 Q11:0 Q12:0 Q13:278 Q14:1  Q15:118 Q16:2 Q17:1
 ```
 
-Q5 cardinality is a function of the licence self-join structure of
-this dataset, not a fixed constant.  The `query_licences` table has
-100 rows but only 72 distinct licence strings, so the
-`l1.licenceId < l2.licenceId` self-join grouped by
-`(l1.licence, l2.licence)` admits 3019 distinct licence-string pairs
-before the prefilter.  The `everEqTh3IndexTh3Index(t1.trip_h3,
-t2.trip_h3)` cell-membership prefilter prunes pairs whose H3
-footprints never coincide.  MobilityDB and MobilitySpark both return
-665 surviving groups on this workload (665 == 665, exact row-count
-parity, the correctness cross-check for the canonical `minDistance`
-form).  The count is a deterministic function of the join and the
-prefilter, so it is reproducible across runs and across platforms
-that materialise `trip_h3` at the same H3 resolution.
+Q5 is the minimum distance between every pair of licence groups:
+the `minDistance(t1.trip, t2.trip)` aggregate over the licence
+cross-join (`l1.licenceId < l2.licenceId`, grouped by
+`(l1.licence, l2.licence)`).  On this dataset the full answer is
+3019 distinct licence-string pairs, every one with a finite
+distance (a 300-pair probe returns 300 finite values, 0 null,
+distances from 0.0 m to 11195.2 m).  The `minDistance` aggregate is
+exact and self-accelerating: each trip's STBox is a sound lower
+bound that skips far pairs without dropping any result.  This is
+the form measured for correctness; the three platforms compute the
+same 3019-row result.
+
+A separate variant adds an `everEqTh3IndexTh3Index(t1.trip_h3,
+t2.trip_h3)` cell-membership prefilter, keeping only the 665 pairs
+whose trip H3 footprints ever coincide.  Cell coincidence is
+independent of distance, so this variant discards 2354 valid pairs
+(78 percent) across the whole distance range, including pairs at
+0.0 m.  It answers a different question than Q5 and is reported
+only as a cross-platform throughput diagnostic: its `665 == 665`
+across MobilityDB and MobilitySpark is a determinism check that
+both engines apply the identical prune, not a correctness check of
+Q5.
 
 ## Sections
 
@@ -140,35 +149,34 @@ The chart is regenerated from
 | Q16 |  16.35 |  3.28 |   69.65 |
 | Q17 |   9.74 |  0.70 |   99.26 |
 
-Q5 is the only row re-measured for the canonical `minDistance` form.
-The MobilityDB Q5 is 9.50 s (median of 10.33 / 9.39 / 9.50), single
-PostgreSQL process.  The MobilitySpark Q5 is 9.60 s on `local[4]`
-(median of 11.234 / 9.598 / 9.192) and 21.56 s on the `local[1]`
-single-thread reference (median of 22.714 / 21.561 / 21.488).  The
-MobilityDuck Q5 cell is the prior 81.34 s figure and is not re-run for
-the canonical form: MobilityDuck on amd64 is blocked by an upstream
-DuckDB v1.4.4 `icu` autoload outage, so the re-measurement pass cannot
-execute on this host.  No suite total is given so the table does not
-imply the non-Q5 rows were re-run.
+The Q5 row reports the cell-prefiltered throughput diagnostic, not
+canonical Q5.  Its MobilityDB figure is 9.50 s (median of 10.33 /
+9.39 / 9.50), single PostgreSQL process; MobilitySpark is 9.60 s on
+`local[4]` (median of 11.234 / 9.598 / 9.192) and 21.56 s on the
+`local[1]` single-thread reference (median of 22.714 / 21.561 /
+21.488).  The MobilityDuck cell is the prior 81.34 s figure and is
+not re-run: MobilityDuck on amd64 is blocked by an upstream DuckDB
+v1.4.4 `icu` autoload outage, so the re-measurement pass cannot
+execute on this host.  Canonical Q5 (the unprefiltered, exact,
+3019-row form) has not been measured cross-platform; that figure is
+owed and is not the 9.50 / 9.60 s above.  No suite total is given so
+the table does not imply the other rows were re-run.
 
 ## Reading the chart
 
 - **Q5 (aggregated cross-join)** asks for the minimum distance between
-  two licence groups' trips.  It is expressed as the
-  `minDistance(t1.trip, t2.trip)` aggregate over the licence cross-join
-  with an `everEqTh3IndexTh3Index(t1.trip_h3, t2.trip_h3)`
-  cell-membership prefilter.  The prefilter prunes licence pairs whose
-  H3 footprints never coincide before the `minDistance` kernel runs on
-  the survivors.  This is the canonical `minDistance` form with the
-  th3index prefilter; both engines land near 9.5 s on the 665-row
-  workload (single PostgreSQL process 9.50 s, MobilitySpark `local[4]`
-  9.60 s, within about one percent).  This is diagnostic, not a
-  leaderboard: both legs run the same MEOS `minDistance` kernel and the
-  same prefilter, so the operator cost is shared, and the close match
-  reflects the same work at different degrees of parallelism (the
-  MobilitySpark `local[4]` figure spreads the licence cross-join across
-  worker threads; the single PostgreSQL process does not).
-  See [Q5 notes](#q5-notes) below.
+  two licence groups' trips.  Canonical Q5 is the
+  `minDistance(t1.trip, t2.trip)` aggregate over the full licence
+  cross-join, exact, accelerated only by the kernel's sound per-trip
+  STBox lower bound; its answer is 3019 pairs.  The bar shown is a
+  separate cell-prefiltered diagnostic (665 pairs, 9.50 s single
+  PostgreSQL process, 9.60 s MobilitySpark `local[4]`, within about
+  one percent): both legs run the same MEOS `minDistance` kernel and
+  the same lossy prune, so the close match is a determinism and
+  parallelism observation (the `local[4]` figure spreads the
+  cross-join across worker threads; the single PostgreSQL process does
+  not), not a correctness result and not canonical Q5.  See
+  [Q5 notes](#q5-notes) below.
 - **MobilityDB wins on Q9 / Q13 / Q15** versus MobilityDuck — the
   R-tree on `trajectory` pays off on `trajectory(atTime(...))`
   predicates that MobilityDuck has to evaluate against the full
@@ -196,44 +204,54 @@ imply the non-Q5 rows were re-run.
 
 ### Q5 notes
 
-Q5 asks for the minimum spatial distance between two licence groups'
-trips, irrespective of time.  The portable SQL expresses this intent
-as the `minDistance(t1.trip, t2.trip)` aggregate over the licence
+Q5 asks for the minimum spatial distance between two licence
+groups' trips, irrespective of time.  Canonical Q5 is the
+`minDistance(t1.trip, t2.trip)` aggregate over the licence
 cross-join (`l1.licenceId < l2.licenceId`, grouped by
-`(l1.licence, l2.licence)`) with an
-`everEqTh3IndexTh3Index(t1.trip_h3, t2.trip_h3)` cell-membership
-prefilter.  The prefilter prunes licence pairs whose trip H3
-footprints never coincide, before the `minDistance` kernel runs the
-exact segment-pair computation on the surviving pairs.  The
-`minDistance` aggregate is exact: it uses each trip's `STBox` as a
-sound lower bound and falls back to the same exact segment-pair kernel
-for pairs the bound cannot prune.
+`(l1.licence, l2.licence)`), with no row-dropping prefilter.  It is
+exact and self-accelerating: each trip's `STBox` is a sound lower
+bound that skips far pairs and falls back to the exact segment-pair
+kernel for the rest.  On this dataset its answer is 3019 distinct
+licence-string pairs; a 300-pair probe returns 300 finite distances
+and 0 null (0.0 m to 11195.2 m), so every pair is a real Q5 answer.
 
-Measured at sf 0.005:
+The cell-prefiltered variant adds
+`everEqTh3IndexTh3Index(t1.trip_h3, t2.trip_h3)` and keeps only the
+665 pairs whose trip H3 footprints ever coincide.  Cell coincidence
+is independent of distance, so the variant drops 2354 of the 3019
+valid pairs (78 percent) across the whole distance range, including
+pairs at 0.0 m.  It answers a different question than Q5 and is
+reported only as a cross-platform throughput diagnostic.
 
-| Engine | Q5 |
+Measured at sf 0.005, cell-prefiltered diagnostic (665-pair
+workload, not canonical Q5):
+
+| Engine | Q5 prefiltered diagnostic |
 |---|---:|
 | MobilityDB (single PostgreSQL process) | 9.50 s (median of 10.33 / 9.39 / 9.50) |
 | MobilitySpark `local[4]` | 9.60 s (median of 11.234 / 9.598 / 9.192) |
 | MobilitySpark `local[1]` (single-thread reference) | 21.56 s (median of 22.714 / 21.561 / 21.488) |
 | MobilityDuck | 81.34 s (prior value, not re-run, upstream DuckDB v1.4.4 `icu` autoload outage on amd64) |
 
-The single-process MobilityDB leg at 9.50 s and MobilitySpark
-`local[4]` at 9.60 s are neck-and-neck on the 665-row workload, within
-about one percent.  This is diagnostic, not competitive: both run the
-same MEOS `minDistance` kernel and the same prefilter, so the operator
-cost is shared.  The MobilitySpark `local[4]` figure parallelises the
-licence cross-join across worker threads while the single PostgreSQL
-backend evaluates it sequentially, so the close match reflects the same
-work at different degrees of parallelism, not a difference in the
-operator.
+The MobilityDB and MobilitySpark `local[4]` legs are within about
+one percent on the 665-pair workload.  Both run the same MEOS
+`minDistance` kernel and the same prune, so this is a determinism
+and parallelism observation: the `local[4]` figure parallelises the
+cross-join across worker threads while the single PostgreSQL backend
+evaluates it sequentially.  It is not a correctness cross-check and
+not a canonical-Q5 timing; `665 == 665` confirms only that both
+engines apply the identical prune identically.
 
-**Tolerance-based simplification is intentionally avoided.**  Wrapping
-Q5 with `maxDistSimplify(Trip, 10.0)` brings the same query under 5 s,
+Canonical Q5 (unprefiltered, exact, 3019-row) has not been measured
+across the three platforms; that figure is owed and is tracked
+separately from the diagnostic above.
+
+**Tolerance-based simplification is intentionally avoided.**
+Wrapping Q5 with `maxDistSimplify(Trip, 10.0)` brings it under 5 s,
 but the returned distance is then only correct within a
 Hausdorff-bounded tolerance, a different quantity than "minimum
-distance".  These primitives stay available as explicit user opt-ins;
-the bench's reference Q5 remains exact.
+distance".  These primitives stay available as explicit user
+opt-ins; canonical Q5 remains exact.
 
 ### Where the gaps go
 
@@ -245,7 +263,7 @@ Using the [shape categorization](#r-query-shape-categorization):
 | Trip × static (Q4/Q7/Q11/Q12/Q15/Q17) | uses R-tree on trip | full scan but vectorised | high JNR-FFI cost; Q11/Q12 hit cap |
 | Trip × trip (Q6/Q10) | R-tree on trip helps Q6, not Q10 | full scan; loses on Q10 | dominated by N×N pair-up — Q10 takes 19 min |
 | Trip × region (Q13/Q14/Q16) | R-tree on trip pays off | comparable | Q14 hits cap; Q13/Q16 minutes |
-| Aggregated cross-join (Q5) | `minDistance` + th3index prefilter; 9.50 s | prior value, not re-run (upstream icu blocker) | `minDistance` + th3index prefilter; 9.60 s on `local[4]` |
+| Aggregated cross-join (Q5) | canonical exact, STBox-bound; cross-platform timing owed (prefiltered diagnostic 9.50 s) | prior value, not re-run (upstream icu blocker) | prefiltered diagnostic 9.60 s on `local[4]` |
 
 ## MobilityDB intra-platform index sub-matrix — sf 0.005, prefilter-bound queries
 
@@ -284,13 +302,15 @@ equisplit opclass that decomposes each trip into N STBoxes via
 | Q6  |  4.23 |  4.00 |  3.74 |  4.99 |  4.46 |  3.57 |  4.62 |
 | Q10 |  6.46 |  7.82 |  7.45 |  5.35 |  5.49 |  5.17 |  5.09 |
 
-Q5 is not in this sub-matrix.  The canonical Q5 is driven by the
-`everEqTh3IndexTh3Index` prefilter on the `trip_h3` column, not by the
-trip or trajectory index family this sub-matrix varies, so a per-family
-Q5 row would not measure what the column heads describe.  The canonical
-Q5 figure is 9.50 s on the single PostgreSQL process (see
-[Q5 notes](#q5-notes)).  No suite total is given here because Q5 is
-omitted.
+Q5 is not in this sub-matrix.  Canonical Q5 is driven by the
+`minDistance` kernel and its per-trip STBox bound; the
+cell-prefiltered diagnostic is driven by the `everEqTh3IndexTh3Index`
+prefilter on the `trip_h3` column.  Neither is the trip or trajectory
+index family this sub-matrix varies, so a per-family Q5 row would not
+measure what the column heads describe.  The prefiltered diagnostic
+figure is 9.50 s on the single PostgreSQL process (see
+[Q5 notes](#q5-notes)); canonical Q5's cross-platform figure is owed.
+No suite total is given here because Q5 is omitted.
 
 Reading:
 
