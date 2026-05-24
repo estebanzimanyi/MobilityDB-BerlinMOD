@@ -59,7 +59,7 @@ Load the data generator and call it with a scale factor:
 
 ```sql
 \i BerlinMOD/berlinmod_datagenerator.sql
-SELECT berlinmod_datagenerator(scaleFactor := 0.005);
+SELECT berlinmod_generate(scaleFactor := 0.005);
 ```
 
 **Generate Deliveries synthetic data:**

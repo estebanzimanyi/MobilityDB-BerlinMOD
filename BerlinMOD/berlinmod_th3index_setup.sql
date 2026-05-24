@@ -13,7 +13,10 @@ idempotent — safe to re-run.
 What it does:
   1. Adds `trip_h3 th3index` to the `Trips` table (NULL if absent).
   2. Populates it by converting the `Trip tgeompoint` column to a
-     `th3index` at H3 resolution 7 via `h3_latlng_to_cell`.  Resolution
+     `th3index` at H3 resolution 7 via `h3_latlng_to_cell`.  `Trip` is
+     stored in EPSG:3857 (see `brussels_preparedata.sql`), so it is
+     reprojected to lon/lat (EPSG:4326) with `transform(Trip, 4326)`
+     first — H3 only accepts lon/lat coordinate systems.  Resolution
      7 (cell edge ~ 1.2 km) is the default for BerlinMOD; lower
      resolutions trade selectivity for coverage and may be preferable
      at larger scale factors.
@@ -33,7 +36,7 @@ ALTER TABLE Trips
   ADD COLUMN IF NOT EXISTS trip_h3 th3index;
 
 UPDATE Trips
-   SET trip_h3 = h3_latlng_to_cell(Trip, 7)
+   SET trip_h3 = h3_latlng_to_cell(transform(Trip, 4326), 7)
  WHERE trip_h3 IS NULL;
 
 DROP INDEX IF EXISTS Trips_trip_h3_gist_idx;
