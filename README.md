@@ -62,6 +62,22 @@ Load the data generator and call it with a scale factor:
 SELECT berlinmod_generate(scaleFactor := 0.005);
 ```
 
+**Scale factor, determinism, and running on your own data:**
+
+The published benchmark figures use **scale factor 0.005** (≈ 1,620
+trips on the Brussels network). The generator is **deterministic**: it
+seeds the PRNG with `setseed(P_RANDOM_SEED = 0.5)`, so the same scale
+factor produces the same dataset on every run, and the documented query
+result counts are reproducible.
+
+You can also run the benchmark at **your own scale factor** — set the
+`scalefactor` variable at the top of `BerlinMOD/berlinmod_runall.sh`
+(or pass a different value to `berlinmod_generate(scaleFactor := …)`) —
+or against **your own data**, provided it follows the BerlinMOD schema
+(`Trips`, `Vehicles`, the parameter tables, etc.). The query result
+counts cited in the documentation hold for scale factor 0.005; other
+scale factors and external datasets yield their own counts.
+
 **Generate Deliveries synthetic data:**
 
 ```sql
