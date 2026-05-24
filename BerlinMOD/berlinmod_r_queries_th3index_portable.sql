@@ -32,8 +32,13 @@ Prerequisites:
     the prefilter pushable to the planner.  Other platforms use the
     columnar `trip_h3` value directly.
 
-Expected row counts must match the non-h3 portable variant (the
-prefilter is sound — see the chapter-1 bench report).
+Expected row counts must match the non-h3 portable variant.  The
+static-geometry prefilter (Q4/Q7/Q11-Q17) is sound: a static cell-set
+overlap is a guaranteed superset of the spatial-against-static
+predicate.  The trip-to-trip metric proximity queries (Q6/Q10) carry
+NO th3index prefilter — no th3index API yields a sound superset for a
+metric `dwithin` between two trips (see the per-query notes), so the
+semantic predicate stands alone for those two.
 
 The h3 prefilter uses the 4326-reprojected geometry of the static
 input.  In schemas where the canonical geometry is metric (e.g.
@@ -87,15 +92,24 @@ FROM Temp1 t1, Temp2 t2
 ORDER BY Licence1, Licence2;
 
 -- Q6: Truck pairs that ever met within 10 m (trip-trip cross-join)
-WITH Temp(Licence, VehicleId, Trip, trip_h3) AS (
-  SELECT v.Licence, t.VehicleId, t.Trip, t.trip_h3
+-- No th3index prefilter: this is a metric proximity (`eDwithin`) between two
+-- trips, and no th3index API yields a sound SUPERSET prefilter for it.  An
+-- `ever_eq(t1.trip_h3, t2.trip_h3)` term is UNSOUND here — at H3 resolution 7
+-- (cell edge ~ 1.2 km) two vehicles a few metres apart across a cell boundary
+-- occupy DIFFERENT cells at every shared instant, so the term drops genuine
+-- matches.  The candidate `eDwithin(t1.trip_h3, t2.trip_h3, dist)` (dwithin on
+-- the densified per-instant cell boundaries) is likewise not a superset: the
+-- temporal synchronisation of the two densified th3index columns drops the
+-- very instants that carry the true matches.  Correctness wins: rely on the
+-- semantic `eDwithin` over the trips alone.
+WITH Temp(Licence, VehicleId, Trip) AS (
+  SELECT v.Licence, t.VehicleId, t.Trip
   FROM Trips t, Vehicles v
   WHERE t.VehicleId = v.VehicleId
     AND v.VehicleType = 'truck')
 SELECT DISTINCT t1.Licence, t2.Licence
 FROM Temp t1, Temp t2
 WHERE t1.VehicleId < t2.VehicleId
-  AND ever_eq(t1.trip_h3, t2.trip_h3)
   AND eDwithin(t1.Trip, t2.Trip, 10.0)
 ORDER BY t1.Licence, t2.Licence;
 
@@ -139,14 +153,18 @@ GROUP BY PeriodId, Period
 ORDER BY PeriodId;
 
 -- Q10: Licences1 vehicles within 3 m of other vehicles (trip-trip)
+-- No th3index prefilter, for the same soundness reason as Q6: this is a metric
+-- proximity (`tDwithin`) between two trips, and no th3index API yields a sound
+-- SUPERSET prefilter for it.  An `ever_eq(t1.trip_h3, t2.trip_h3)` term is
+-- UNSOUND (it drops the genuine TripId 14 <-> 725 match, among others).  Rely
+-- on the semantic `tDwithin` over the trips alone.
 WITH Temp AS (
   SELECT l1.Licence AS Licence1, t2.VehicleId AS Car2Id,
     whenTrue(tDwithin(t1.Trip, t2.Trip, 3.0)) AS Periods
   FROM Trips t1, Licences1 l1, Trips t2, Vehicles v
   WHERE t1.VehicleId = l1.VehicleId
     AND t2.VehicleId = v.VehicleId
-    AND t1.VehicleId <> t2.VehicleId
-    AND ever_eq(t1.trip_h3, t2.trip_h3))
+    AND t1.VehicleId <> t2.VehicleId)
 SELECT Licence1, Car2Id, Periods
 FROM Temp
 WHERE Periods IS NOT NULL;
