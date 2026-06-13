@@ -136,12 +136,16 @@ platform-specific operator symbols):
 
 **Export data for MobilityDuck / MobilitySpark:**
 
-The `berlinmod_portability_export()` function writes five CSV files in the
-shared cross-platform schema:
+The `berlinmod_portability_export()` function writes the complete dataset (seven
+CSV files) in the shared cross-platform schema, with all geometries reprojected
+to one output SRID and SRID-tagged (trips as hex-EWKB) so consumers never
+reproject:
 
 ```sql
 \i BerlinMOD/berlinmod_export.sql
-SELECT berlinmod_portability_export('/path/to/output/');
+-- args: path, H3 resolution, output SRID (default 4326; 3812 = ETRS89/Belgian
+-- Lambert 2008, Brussels, for true-metre distance queries)
+SELECT berlinmod_portability_export('/path/to/output/', 7, 3812);
 ```
 
 This produces:
@@ -149,13 +153,15 @@ This produces:
 | File | Contents |
 |------|----------|
 | `vehicles.csv` | `vehId, licence, type, model` |
-| `trips.csv` | `tripId, vehId, trip` — tgeompoint as WKT text |
+| `trips.csv` | `tripId, vehId, trip, trip_h3` — trip as hex-EWKB (SRID embedded) |
 | `query_licences.csv` | `licenceId, licence` |
 | `query_instants.csv` | `instantId, instant` |
-| `query_points.csv` | `pointId, geom` — geometry as WKT text |
+| `query_points.csv` | `pointId, geom` — geometry as EWKT (SRID-tagged) |
+| `query_periods.csv` | `periodId, period` — tstzspan as text |
+| `query_regions.csv` | `regionId, geom` — geometry as EWKT (SRID-tagged) |
 
-These files can be loaded directly by the MobilitySpark cross-platform test
-runner (`berlinmod/run_mbdb.sh`, `run_mduck.sh`) as described in the
+These files load directly into each platform's benchmark runner with no
+post-processing, as described in the
 [MobilitySpark repository](https://github.com/MobilityDB/MobilitySpark).
 
 ## 5. Running the Tests
