@@ -125,30 +125,23 @@ $$ LANGUAGE 'plpgsql';
  * SRID-tagged, so the consumer repositories load the data directly with no
  * per-tool post-processing or reprojection.
  *
+ * The CSV is RAW trajectory/geometry data only — no H3 columns. H3 is an index
+ * each consumer builds at LOAD from the lat/lon data (th3index(trip,R) /
+ * geoToH3IndexSet(geom,R)), exactly as a real ingest of raw GPS/AIS would: the
+ * source never ships precomputed cells.
+ *
  * Schema produced (all geometries in the chosen output SRID):
  *   vehicles.csv       : vehId, licence, type, model
- *   trips.csv          : tripId, vehId, trip, trip_h3
- *                        - trip   : tgeompoint as hex-EWKB (Extended WKB — the
- *                                   SRID is embedded, so it is never lost).
- *                        - trip_h3: th3index temporal H3-cell index, hex-WKB,
- *                                   produced by tgeompoint_to_th3index(trip, R)
- *                                   at the chosen H3 resolution.  Used by all
- *                                   three platforms as a spatial prefilter for
- *                                   the cross-join family of BerlinMOD queries
- *                                   (Q4/Q5/Q6/Q10).  R defaults to 7 (cell edge
- *                                   ≈ 1.2 km) — sound for the 3-10 m distance
- *                                   thresholds the queries use.
+ *   trips.csv          : tripId, vehId, trip       -- tgeompoint as hex-EWKB
+ *                        (Extended WKB — SRID embedded, never lost).
  *   query_licences.csv : licenceId, licence
  *   query_instants.csv : instantId, instant
- *   query_points.csv   : pointId, geom           -- geometry as EWKT (SRID-tagged)
- *   query_periods.csv  : periodId, period        -- tstzspan as text
- *   query_regions.csv  : regionId, geom          -- geometry as EWKT (SRID-tagged)
+ *   query_points.csv   : pointId, geom             -- geom as EWKT (SRID-tagged)
+ *   query_periods.csv  : periodId, period          -- tstzspan as text
+ *   query_regions.csv  : regionId, geom            -- geom as EWKT (SRID-tagged)
  *
  * Parameters:
  * - fullpath:    directory path (with trailing slash) where CSV files are written.
- * - h3resolution: H3 resolution for the trip_h3 column (default 7).  Use a coarser
- *                resolution (e.g. 5 — cell edge ≈ 9 km) for an even safer
- *                prefilter at the cost of selectivity.
  * - srid:        output SRID for the exported geometries (default 4326, WGS84).
  *                The trips and points are reprojected here, in PostgreSQL, and
  *                emitted as EWKT (SRID=N;...) so the SRID travels with the data
@@ -173,14 +166,12 @@ $$ LANGUAGE 'plpgsql';
  * Example:
  *     \i berlinmod_export.sql
  *     SELECT berlinmod_portability_export('/home/mobilitydb/portability/');
- *     SELECT berlinmod_portability_export('/home/mobilitydb/portability/', 7);
- *     SELECT berlinmod_portability_export('/home/mobilitydb/portability/', 7, 3812);
+ *     SELECT berlinmod_portability_export('/home/mobilitydb/portability/', 3812);
  *****************************************************************************/
 
 DROP FUNCTION IF EXISTS berlinmod_portability_export;
 CREATE OR REPLACE FUNCTION berlinmod_portability_export(
     fullpath      text,
-    h3resolution  integer DEFAULT 7,
     srid          integer DEFAULT 4326)
 RETURNS text AS $$
 DECLARE
@@ -192,7 +183,6 @@ BEGIN
   RAISE INFO 'Exporting BerlinMOD data in cross-platform portability schema';
   RAISE INFO 'Target: %', fullpath;
   RAISE INFO 'Output SRID: % (geometries reprojected from the source CRS)', srid;
-  RAISE INFO 'H3 resolution for trip_h3: %', h3resolution;
   RAISE INFO 'Execution started at %', startTime;
   RAISE INFO '------------------------------------------------------------------';
 
@@ -203,19 +193,18 @@ BEGIN
            FROM Vehicles ORDER BY VehicleId)
      TO ''%svehicles.csv'' DELIMITER '','' CSV HEADER', fullpath);
 
-  RAISE INFO 'Exporting trips.csv (trip as hex-EWKB in SRID % + trip_h3 as hex-WKB at resolution %)', srid, h3resolution;
+  RAISE INFO 'Exporting trips.csv (trip as hex-EWKB in SRID %)', srid;
   -- Reproject the trip to the requested output SRID and serialise it as hex-EWKB
-  -- (Extended WKB) so the SRID travels embedded in the binary: consumers load
-  -- it already in the target CRS and never reproject — which engines without
-  -- ST_Transform on temporal geometries (e.g. DuckDB) cannot do.  EWKB (not
-  -- plain WKB) is used precisely so the SRID is never lost.  trip_h3 is
-  -- independent of the output SRID: it stays the spatial prefilter key.
+  -- (Extended WKB) so the SRID travels embedded in the binary: consumers load it
+  -- already in the target CRS.  The CSV carries only the RAW trajectory — no H3
+  -- column.  H3 is an index every consumer builds at LOAD from the lat/lon data
+  -- (th3index(trip, R)), exactly as a real ingest of raw GPS/AIS would: the
+  -- source never ships precomputed cells.
   EXECUTE format(
     'COPY (SELECT TripId AS tripId, VehicleId AS vehId,
-                  asHexEWKB(transform(Trip, %s)) AS trip,
-                  asHexWKB(tgeompoint_to_th3index(Trip, %s)) AS trip_h3
+                  asHexEWKB(transform(Trip, %s)) AS trip
            FROM Trips ORDER BY TripId)
-     TO ''%strips.csv'' DELIMITER '','' CSV HEADER', srid, h3resolution, fullpath);
+     TO ''%strips.csv'' DELIMITER '','' CSV HEADER', srid, fullpath);
 
   RAISE INFO 'Exporting query_licences.csv';
   EXECUTE format(
@@ -230,8 +219,10 @@ BEGIN
      TO ''%squery_instants.csv'' DELIMITER '','' CSV HEADER', fullpath);
 
   RAISE INFO 'Exporting query_points.csv (geometry as EWKT in SRID %)', srid;
+  -- Raw geometry only; the geom_h3 cell-set index is built at LOAD from this
+  -- lat/lon geometry (geoToH3IndexSet(geom, R)), like trip_h3.
   EXECUTE format(
-    'COPY (SELECT PointId AS pointId, ST_AsEWKT(ST_Transform(Geom, %s)) AS geom
+    'COPY (SELECT PointId AS pointId, asEWKT(transform(Geom, %s)) AS geom
            FROM Points ORDER BY PointId)
      TO ''%squery_points.csv'' DELIMITER '','' CSV HEADER', srid, fullpath);
 
@@ -242,8 +233,9 @@ BEGIN
      TO ''%squery_periods.csv'' DELIMITER '','' CSV HEADER', fullpath);
 
   RAISE INFO 'Exporting query_regions.csv (geometry as EWKT in SRID %)', srid;
+  -- Raw geometry only; geom_h3 is built at LOAD like the point geom_h3.
   EXECUTE format(
-    'COPY (SELECT RegionId AS regionId, ST_AsEWKT(ST_Transform(Geom, %s)) AS geom
+    'COPY (SELECT RegionId AS regionId, asEWKT(transform(Geom, %s)) AS geom
            FROM Regions ORDER BY RegionId)
      TO ''%squery_regions.csv'' DELIMITER '','' CSV HEADER', srid, fullpath);
 
